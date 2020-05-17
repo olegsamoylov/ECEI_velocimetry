@@ -197,6 +197,37 @@ class my_funcs:
         print("ECEId data is sliced: tB = %g, tE = %g"%(self.time_C[0],self.time_C[-1]))
         print("The attribute is written as 'self.ECEId_C','self.time_C'.\n")
 
+    def cutDataEQH(self, time, rhopM, R, z,
+            Rmag, zmag, time_point):
+        """
+        Cut the data for the given time point
+        linear interpolate rhopM, Rmag, zmag
+        R and z are not required to be intrepolated
+        because they are constant matrices
+        """
+        from scipy.interpolate import interp1d
+        Nz, NR = rhopM.shape[1], rhopM.shape[2]
+        rhopM_t = np.zeros([Nz,NR])
+        idx_B = np.searchsorted(time, time_point, side='right') -1
+        idx_E = np.searchsorted(time, time_point, side='right')
+        for i_Nz in range(Nz):
+            linfit = interp1d([time[idx_B],time[idx_E]], np.vstack([rhopM[idx_B,i_Nz,:], rhopM[idx_E,i_Nz,:]]), axis=0)
+            rhopM_t[i_Nz,:] = linfit(time_point)
+            
+        # linear interp Rmag and zmag
+        linfit = interp1d([time[idx_B],time[idx_E]], np.vstack([Rmag[idx_B], Rmag[idx_E]]), axis=0)
+        self.Rmag_t = linfit(time_point)
+        linfit = interp1d([time[idx_B],time[idx_E]], np.vstack([zmag[idx_B], zmag[idx_E]]), axis=0)
+        self.zmag_t = linfit(time_point)
+        # R and z matrices are constant in time (no interp needed)
+        self.rhopM_t = rhopM_t
+        self.R_t = R[idx_B]
+        self.z_t = z[idx_B]
+        self.RR_t, self.zz_t = np.meshgrid(self.R_t,self.z_t)
+        self.time_t = time_point
+        print("rhopM lin interp for t=%g s, between tB=%g s,tE=%g s"
+                %(time_point, time[idx_B], time[idx_E]))
+        
 
     def relECEI(self, ECEI_data):
         """

@@ -4,7 +4,7 @@ import importlib
 import sys
 import os
 from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QWidget, QAction, QTabWidget, QVBoxLayout, QComboBox, QLabel, QLineEdit, QShortcut, QCheckBox
-from PyQt5.QtGui import QIcon, QPixmap, QKeySequence
+from PyQt5.QtGui import QIcon, QPixmap, QKeySequence, QTextCursor
 from PyQt5.QtCore import pyqtSlot, QRect
 from matplotlib.backends.qt_compat import QtCore, QtWidgets, is_pyqt5
 from matplotlib.backends.backend_qt5agg import (
@@ -17,6 +17,7 @@ path_of_the_current_file = str(os.path.dirname(os.path.realpath(__file__)))
 os.chdir(path_of_the_current_file)
 sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
 sys.path.append(path_of_the_current_file + '/modules')
+import map_equ_20190429 as equ
 import my_funcs_class as my_funcs
 import ECI_Load_osam as ECI
 import TDI_Load_osam as TDI
@@ -162,6 +163,10 @@ class MyTableWidget(QWidget):
         self.chzz_lbl_RzPl.setText('Remove LOS:')
         self.chRR_lbl_RzPl = QLabel(self.Rz_tab)
         self.chRR_lbl_RzPl.setText('Remove R chs:')
+        
+        # velocimetry specific labels
+        self.rhop_lbl_RzPl = QLabel(self.Rz_tab)
+        self.rhop_lbl_RzPl.setText('rho_pol:')
 
         # line edits
         # time edits
@@ -215,6 +220,13 @@ class MyTableWidget(QWidget):
         self.FourMult_ed_RzPl = QLineEdit(self.Rz_tab)
         self.FourMult_ed_RzPl.setText('13.0,15.0;26,30')
         self.FourMult_ed_RzPl.setMinimumSize(QtCore.QSize(100, 0))
+        # velocimetry specific line edits 
+        self.rhop_ed_RzPl = QLineEdit(self.Rz_tab)
+        self.rhop_ed_RzPl.setText('0.3')
+        self.sendpoints_butt_RzPl = QPushButton("Send t,R,z,r", self.Rz_tab)
+        self.sendpoints_butt_RzPl.clicked.connect(self.send_points)
+        self.clearpoints_butt_RzPl = QPushButton("Clear table", self.Rz_tab)
+        self.clearpoints_butt_RzPl.clicked.connect(self.clear_table)
 
         # what to plot (type of filter)
         self.ImgType_plot_RzPl = QComboBox(self.Rz_tab)
@@ -243,26 +255,6 @@ class MyTableWidget(QWidget):
         self.PlusTplot_butt_RzPl.clicked.connect(lambda: self.f_Rz_plot(2))
         self.tplot_butt_RzPl.clicked.connect(lambda: self.f_Rz_plot(3))
 
-        # Shortcuts
-        shortcut_plot_Rz = QShortcut(QKeySequence("Ctrl+p"),
-                                     self.tplot_butt_RzPl)
-        shortcut_plot_Rz.activated.connect(lambda: self.f_Rz_plot(3))
-        shortcut_plot_Rz.setEnabled(True)
-
-        shortcut_next_Rz = QShortcut(QKeySequence("Ctrl+j"),
-                                     self.PlusTplot_butt_RzPl)
-        shortcut_next_Rz.activated.connect(lambda: self.f_Rz_plot(2))
-        shortcut_next_Rz.setEnabled(True)
-
-        shortcut_prev_Rz = QShortcut(QKeySequence("Ctrl+k"),
-                                     self.MinusTplot_butt_RzPl)
-        shortcut_prev_Rz.activated.connect(lambda: self.f_Rz_plot(1))
-        shortcut_prev_Rz.setEnabled(True)
-
-        shortcut_tC_Rz = QShortcut(QKeySequence("Ctrl+t"),
-                                   self.Butt_dt_RzPl)
-        shortcut_tC_Rz.activated.connect(lambda: self.tBE_from_tCnt(9))
-        shortcut_tC_Rz.setEnabled(True)
         # Add widgets to layout
         # First row
         sublayout_RzPl.setSpacing(2)
@@ -310,11 +302,15 @@ class MyTableWidget(QWidget):
         sublayout_RzPl.addWidget(self.tplot_ed_RzPl, 3, 1)
         sublayout_RzPl.addWidget(self.dtplot_lbl_RzPl, 3, 2)
         sublayout_RzPl.addWidget(self.dtplot_ed_RzPl, 3, 3)
+        # Fourth row
+        sublayout_RzPl.addWidget(self.rhop_lbl_RzPl, 4, 0)
+        sublayout_RzPl.addWidget(self.rhop_ed_RzPl, 4, 1)
+        sublayout_RzPl.addWidget(self.sendpoints_butt_RzPl, 4, 2)
+        sublayout_RzPl.addWidget(self.clearpoints_butt_RzPl, 4, 3)
         # Plot control
         sublayout_RzPl.addWidget(self.ImgType_plot_RzPl, 1, 12)
         sublayout_RzPl.addWidget(self.type_plot_RzPl, 2, 12)
         sublayout_RzPl.addWidget(self.Save_plot_RzPl, 3, 7)
-        # sublayout_RzPl.addWidget(self.Info2_lbl_RzPl, 3, 8)
         sublayout_RzPl.addWidget(self.Interp_plot_RzPl, 3, 8)
         sublayout_RzPl.addWidget(self.MinusTplot_butt_RzPl, 3, 10)
         sublayout_RzPl.addWidget(self.PlusTplot_butt_RzPl, 3, 11)
@@ -334,6 +330,14 @@ class MyTableWidget(QWidget):
         layout_RzPl.addWidget(self.toolbar)
         self._static_ax = self.static_canvas_RzPl.figure.subplots()  # add axes
 
+        # velcimetry data
+        self.Monitor_RzPl = QtWidgets.QTextBrowser(self.Rz_tab)
+        self.Monitor_RzPl.setText("NN\tt\tR\tz\tr\n")
+        self.counter = 1
+        self.Monitor_RzPl.setMaximumSize(QtCore.QSize(1920, 50))
+        sublayout2_RzPl = QtWidgets.QVBoxLayout()  # layout for monitor
+        layout_RzPl.addLayout(sublayout2_RzPl)
+        sublayout2_RzPl.addWidget(self.Monitor_RzPl,0)
 
 # ----------------------------------------------------------------------------------
         # SettRz tab - content
@@ -499,6 +503,12 @@ class MyTableWidget(QWidget):
                 self.Monitor_load.setText("")
                 EQ = EQH.EQH()
                 EQ.Load(self.Shot)
+                self.EQ_rhopM = EQ.rhopM
+                self.EQ_time = EQ.time
+                self.EQ_R = EQ.R
+                self.EQ_z = EQ.z
+                self.EQ_Rmag = EQ.Rmag
+                self.EQ_zmag = EQ.zmag
                 self.Monitor_load.insertPlainText("EQH data has been loaded succesfully.\n")
             except Exception as exc:
                 traceback.print_exc()
@@ -575,12 +585,17 @@ class MyTableWidget(QWidget):
                 if (which_plot == 3):
                     tplot = float(self.tplot_ed_RzPl.text())
                     self.counter_save = 0
-
+                
+                self.tplot = tplot
                 dtplot = float(self.dtplot_ed_RzPl.text())
                 contour_check = self.Contour_ed_RzPl.text()
                 mf = my_funcs.my_funcs()
                 mf.CutDataECEI(self.ECEId_time, self.ECEId, tBegin=tB, tEnd=tE)
                 mf.relECEI(mf.ECEId_C)
+                
+                mf.cutDataEQH(self.EQ_time, self.EQ_rhopM,
+                        self.EQ_R, self.EQ_z, self.EQ_Rmag,
+                        self.EQ_zmag, tplot)
                 time_plot, data_plot = mf.time_C, mf.ECEId_rel
                 
                 filter_status = "None"
@@ -795,7 +810,7 @@ class MyTableWidget(QWidget):
 
                 self._static_ax[0].set_xlabel("R [m]")
                 self._static_ax[0].set_ylabel("z [m]")
-                self._static_ax[0].set_title("t = %0.7g" % (time_plot_t))
+                
 
                 for i, txt in enumerate(ch_zz):
                     self._static_ax[0].annotate(
@@ -804,7 +819,41 @@ class MyTableWidget(QWidget):
                 for i, txt in enumerate(ch_RR):
                     self._static_ax[0].annotate(
                         txt + 1, (RR_plot[0, i], zz_plot[0, i]), fontsize=8)
-
+                    
+                # EQ contours
+                contours_rhop = self._static_ax[0].contour(
+                        mf.RR_t, mf.zz_t, mf.rhopM_t, 50)
+                self._static_ax[0].clabel(
+                        contours_rhop, inline=True, fontsize=10)
+                self._static_ax[0].plot(mf.Rmag_t,mf.zmag_t, 'bo')
+                self._static_ax[0].set_xlim([mf.Rmag_t, 
+                    RR_plot[0, -1]])
+                self._static_ax[0].set_ylim([zz_plot[0, 0], 
+                    zz_plot[-1, 0]])
+                
+                
+                rhop_to_plot = float(self.rhop_ed_RzPl.text())
+                equ_data = equ.equ_map(self.Shot, 'EQH', 'AUGD')
+                data_rz = equ_data.rho2rz(
+                        rhop_to_plot, tplot, 'rho_pol')
+                R_from_rhop = data_rz[0][0][0]
+                z_from_rhop = data_rz[1][0][0]
+                self.Rmag_t = mf.Rmag_t
+                self.zmag_t = mf.zmag_t
+                r_rhop = np.sqrt((self.Rmag_t - R_from_rhop[0])**2 +
+                        (self.zmag_t - z_from_rhop[0])**2) 
+                self._static_ax[0].plot(
+                        R_from_rhop, z_from_rhop,
+                        'g-',linewidth=4.0)
+                
+                self.my_line, = self._static_ax[0].plot(
+                        [self.Rmag_t, R_from_rhop[0]],
+                        [self.zmag_t, z_from_rhop[0]],
+                        marker = 'o',
+                        color = 'b')
+                self._static_ax[0].set_title("t = %0.7g s, rhop(green) = %0.2g, r_rhop = %0.4g m"
+                        %(time_plot_t, rhop_to_plot, r_rhop))
+                # 1D plot
                 self._static_ax[1].plot(time_plot, trace_1D)
                 self._static_ax[1].set_xlabel("t [s]")
                 self._static_ax[1].set_ylabel("deltaTrad/<Trad>")
@@ -812,6 +861,7 @@ class MyTableWidget(QWidget):
                     "LOS = 7, R_ch = 4, dt resolut = %g s" %
                     (time_plot[1] - time_plot[0]))
                 self._static_ax[1].axvline(x=time_plot_t, color="k")
+                
 
                 self.figure_RzPl.suptitle(
                     "ECEI, Shot #%d, Filter: %s" %
@@ -843,12 +893,26 @@ class MyTableWidget(QWidget):
             print("Please load the ECEI data (first tab)")
 
     def mouse_click_Rz(self, event):
-        ix, iy = event.xdata, event.ydata
-        print('x = %07g, y = %07g' % (
-            ix, iy))
-        self.tplot_ed_RzPl.setText("%0.7g" % (ix))
         if (event.dblclick == True) & (event.button == 1):
+            ix, iy = event.xdata, event.ydata
+            self.tplot_ed_RzPl.setText("%0.7g" % (ix))
             self.f_Rz_plot(3)
+            
+        if (event.dblclick == True) & (event.button == 3):
+            ix, iy = event.xdata, event.ydata
+            self.r_rhop_blue = np.sqrt((self.Rmag_t - ix)**2 +
+                    (self.zmag_t - iy)**2) 
+            self.R_blue = ix
+            self.z_blue = iy
+            self.my_line.remove()
+            self.my_line, = self._static_ax[0].plot(
+                    [self.Rmag_t, ix],
+                    [self.zmag_t, iy],
+                    marker = 'o',
+                    color = 'b')
+            self._static_ax[0].set_xlabel(
+                    "R [m]; blue: R = %0.4g m, z = %0.4g m, r_rhop = %0.4g m" 
+                    %(self.R_blue, self.z_blue, self.r_rhop_blue))
 
     def sync_tabs(self, number):
         try:
@@ -877,6 +941,27 @@ class MyTableWidget(QWidget):
         except Exception as exc:
             print("!!! Couldn't synchronize tabs. ERROR: %s" % (exc))
 
+    def send_points(self):
+        try:
+            self.Monitor_RzPl.moveCursor(QTextCursor.End)
+            self.Monitor_RzPl.insertPlainText(
+                    "%d\t%0.7g\t%0.4g\t%0.4g\t%0.4g\n"
+                    %(self.counter, self.tplot,
+                    self.R_blue, self.z_blue,
+                    self.r_rhop_blue))
+            self.counter += 1
+        except Exception as exc:
+            traceback.print_exc()
+            print("!!! Cannot plot. ERROR: %s" % (exc))
+
+
+    def clear_table(self):
+        try:
+            self.Monitor_RzPl.setText("NN\tt\tR\tz\tr\n")
+            self.counter = 1
+        except Exception as exc:
+            traceback.print_exc()
+            print("!!! Cannot plot. ERROR: %s" % (exc))
 
 # -------------------------------------------------------------------------------------------
 
